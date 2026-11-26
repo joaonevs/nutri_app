@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Variações para a sua dieta</title>
+<style>
+  :root { --bg:#f6f7f5; --card:#fff; --txt:#1f2933; --mut:#6b7280; --brand:#2f7d4f; --warn:#b45309; --bd:#e3e6e3; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181b; --card:#1d2226; --txt:#e5e7eb; --mut:#9ca3af; --brand:#5fbf86; --warn:#fbbf24; --bd:#2d353b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:1.5rem; margin:0 0 4px; }
+  h2 { font-size:1.1rem; margin:0 0 8px; }
+  h3 { font-size:1rem; margin:0 0 4px; }
+  .sub { color:var(--mut); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:16px; margin-bottom:16px; }
+  label { display:block; font-weight:600; margin:12px 0 4px; }
+  textarea, select, input[type=file] { width:100%; padding:8px; border:1px solid var(--bd); border-radius:8px; background:var(--bg); color:var(--txt); font:inherit; }
+  textarea { min-height:90px; resize:vertical; }
+  button { margin-top:14px; padding:10px 18px; border:0; border-radius:8px; background:var(--brand); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .erro { color:#b91c1c; margin-top:10px; white-space:pre-wrap; }
+  .aviso { border-left:4px solid var(--warn); padding:8px 12px; margin:10px 0; background:var(--bg); border-radius:4px; }
+  .chip { display:inline-block; padding:2px 10px; margin:2px 4px 2px 0; border-radius:999px; background:var(--bg); border:1px solid var(--bd); font-size:.85rem; }
+  .mut { color:var(--mut); font-size:.9rem; }
+  ul, ol { margin:6px 0; padding-left:22px; }
+  .var { border-top:1px solid var(--bd); padding-top:12px; margin-top:12px; }
+  .rodape { color:var(--mut); font-size:.85rem; margin-top:24px; }
+  .oculto { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Variações para a sua dieta</h1>
+  <p class="sub">Envie seu plano alimentar e receba novas formas de preparar e temperar os mesmos alimentos.</p>
+
+  <section class="card" id="passo1">
+    <h2>1. Envie a dieta</h2>
+    <label for="arquivos">Fotos, PDF ou TXT</label>
+    <input type="file" id="arquivos" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt">
+    <label for="texto">Ou cole o texto</label>
+    <textarea id="texto" placeholder="Ex.: Café da manhã: 2 fatias de pão integral, 2 ovos..."></textarea>
+    <button id="btnLer">Ler dieta</button>
+    <div id="erro1" class="erro"></div>
+  </section>
+
+  <section class="card oculto" id="passo2">
+    <h2>2. Confira a leitura</h2>
+    <p class="mut">Veja se o app entendeu certo. Se algo estiver errado, volte e envie de novo (uma foto mais nítida ajuda).</p>
+    <div id="dieta"></div>
+    <label for="pref">Preferências (opcional)</label>
+    <textarea id="pref" maxlength="1000" placeholder="Ex.: gosto de comida picante; tenho air fryer; pouco tempo de manhã"></textarea>
+    <label for="qtd">Variações por refeição</label>
+    <select id="qtd">
+      <option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option>
+    </select>
+    <button id="btnGerar">Gerar variações</button>
+    <div id="erro2" class="erro"></div>
+  </section>
+
+  <section class="oculto" id="passo3">
+    <h2>3. Suas variações</h2>
+    <div id="resultado"></div>
+  </section>
+
+  <p class="rodape">
+    Sugestões geradas por IA para variar preparo e temperos. Elas não substituem a orientação do seu nutricionista:
+    em caso de dúvida, confirme com ele antes de mudar qualquer coisa.
+  </p>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+
+// Cria elementos sem innerHTML (o texto vindo do modelo nunca é interpretado como HTML)
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) e.setAttribute(k, v);
+  for (const kid of kids.flat()) e.append(kid instanceof Node ? kid : document.createTextNode(kid ?? ''));
+  return e;
+}
+
+async function chamar(url, opts) {
+  const r = await fetch(url, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const d = data.detail;
+    throw new Error(Array.isArray(d) ? d.map((x) => x.msg).join('; ') : d || `Erro ${r.status}`);
+  }
+  return data;
+}
+
+let dieta = null;
+
+$('#btnLer').onclick = async () => {
+  const btn = $('#btnLer');
+  $('#erro1').textContent = '';
+  const fd = new FormData();
+  for (const f of $('#arquivos').files) fd.append('arquivos', f);
+  fd.append('texto', $('#texto').value);
+
+  btn.disabled = true; btn.textContent = 'Lendo...';
+  try {
+    dieta = await chamar('/api/extrair', { method: 'POST', body: fd });
+    mostrarDieta(dieta);
+    $('#passo2').classList.remove('oculto');
+    $('#passo3').classList.add('oculto');
+    $('#passo2').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) {
+    $('#erro1').textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Ler dieta';
+  }
+};
+
+function mostrarDieta(d) {
+  const box = $('#dieta');
+  box.replaceChildren();
+  if (d.pontos_incertos.length) {
+    box.append(el('div', { class: 'aviso' }, el('strong', {}, 'Conferir: '), d.pontos_incertos.join(' · ')));
+  }
+  for (const r of d.refeicoes) {
+    box.append(
+      el('h3', {}, r.nome + (r.horario ? ` (${r.horario})` : '')),
+      el('ul', {}, r.alimentos.map((a) => el('li', {}, `${a.quantidade} — ${a.nome}`))),
+    );
+  }
+  if (d.restricoes.length) {
+    box.append(el('p', {}, el('strong', {}, 'Restrições: '), d.restricoes.map((x) => el('span', { class: 'chip' }, x))));
+  }
+}
+
+$('#btnGerar').onclick = async () => {
+  const btn = $('#btnGerar');
+  $('#erro2').textContent = '';
+  btn.disabled = true; btn.textContent = 'Gerando...';
+  try {
+    const res = await chamar('/api/sugerir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dieta,
+        preferencias: $('#pref').value,
+        variacoes_por_refeicao: Number($('#qtd').value),
+      }),
+    });
+    mostrarSugestoes(res);
+    $('#passo3').classList.remove('oculto');
+    $('#passo3').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) {
+    $('#erro2').textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Gerar variações';
+  }
+};
+
+function mostrarSugestoes(res) {
+  const box = $('#resultado');
+  box.replaceChildren();
+  for (const av of res.avisos) box.append(el('div', { class: 'aviso' }, av));
+  for (const s of res.sugestoes) {
+    const card = el('div', { class: 'card' },
+      el('h3', {}, s.refeicao),
+      el('p', { class: 'mut' }, 'Base: ' + s.alimentos_base.join(', ')),
+    );
+    for (const v of s.variacoes) {
+      card.append(el('div', { class: 'var' },
+        el('strong', {}, v.titulo),
+        el('span', { class: 'mut' }, ` · ${v.tecnica}` + (v.tempo_minutos ? ` · ${v.tempo_minutos} min` : '')),
+        el('div', {}, v.temperos.map((t) => el('span', { class: 'chip' }, t))),
+        el('ol', {}, v.passos.map((p) => el('li', {}, p))),
+      ));
+    }
+    box.append(card);
+  }
+}
+</script>
+</body>
+</html>
